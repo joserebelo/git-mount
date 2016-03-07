@@ -1,133 +1,93 @@
-// Hellofs implements a simple "hello world" file system.
 package main
 
 import (
-	"flag"
-	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
+	"path/filepath"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	_ "bazil.org/fuse/fs/fstestutil"
 	"golang.org/x/net/context"
 	"taterbase.me/git-mount/git"
 )
 
-var mountpoint string
+var (
+	hash_map = make(map[string]*DirEnt)
+	root     *DirEnt
+)
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "  %s MOUNTPOINT\n", os.Args[0])
-	flag.PrintDefaults()
+type DirEnt struct {
+	INodes []*DirEnt
+	Name   string
+	Path   string
 }
 
-func cleanup() {
-	err := fuse.Unmount(mountpoint)
-	if err != nil {
-		log.Fatal(err)
-	}
+var _ fs.Node = (*DirEnt)(nil)
+
+func (d *DirEnt) Attr(ctx context.Context, a *fuse.Attr) error {
+	a.Mode = os.ModeDir | os.ModeDir | 0555
+	return nil
+}
+
+type File struct {
+	length uint64
+}
+
+var _ fs.Node = (*File)(nil)
+
+func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
+	a.Mode = 0444
+	a.Size = f.length
+	return nil
+}
+
+type GitFS struct{}
+
+var _ fs.FS = (*GitFS)(nil)
+
+func (gfs *GitFS) Root() (fs.Node, error) {
+	return root, nil
 }
 
 func main() {
+	treeish := "HEAD"
+	dir := ""
+	paths, err := git.ListFiles(treeish, dir)
+	if err != nil {
+		log.Fatalf("Unable to list files for treeish %s: %v", treeish,
+			err)
+	}
 
-	flag.Usage = usage
-	flag.Parse()
+	root = &DirEnt{
+		Name: "/",
+		Path: ".",
+	}
 
-	var err error
-	mountpoint = flag.Arg(0)
-	if len(mountpoint) == 0 {
-		fmt.Println("No folder specified for mounting,")
-		fmt.Println("creating temp directory")
-		mountpoint, err = ioutil.TempDir("", "git-mount-")
-		if err != nil {
-			panic(err)
+	hash_map["."] = root
+
+	for _, file_path := range paths {
+		dir, file_name := filepath.Split(file_path)
+		file := &DirEnt{Name: file_name, Path: file_path}
+		parent := getDirent(dir)
+		parent.INodes = append(parent.INodes, file)
+	}
+	log.Printf("%+v", hash_map)
+}
+
+func getDirent(path string) *DirEnt {
+	dirent, ok := hash_map[path]
+	if !ok {
+		name := filepath.Base(path)
+		parent_dir := filepath.Dir(path)
+
+		parent := getDirent(parent_dir)
+		dirent = &DirEnt{
+			Name:   name,
+			Path:   path,
+			INodes: []*DirEnt{},
 		}
+		parent.INodes = append(parent.INodes, dirent)
+		hash_map[path] = dirent
 	}
-
-	fmt.Printf("Mounting at %s", mountpoint)
-	c, err := fuse.Mount(
-		mountpoint,
-		fuse.FSName("git-mount"),
-		fuse.Subtype("git-mount"),
-		fuse.LocalVolume(),
-		fuse.VolumeName("katamari:3b4cfd3"),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer c.Close()
-
-	// Clean up on ctrl-{c,d}
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGHUP,
-		syscall.SIGQUIT)
-	go func() {
-		<-ch
-		cleanup()
-		os.Exit(1)
-	}()
-
-	err = fs.Serve(c, FS{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// check if the mount process has an error to report
-	<-c.Ready
-	if err := c.MountError; err != nil {
-		log.Fatal(err)
-	}
-}
-
-// FS implements the hello world file system.
-type FS struct{}
-
-func (FS) Root() (fs.Node, error) {
-	return Dir{}, nil
-}
-
-// Dir implements both Node and Handle for the root directory.
-type Dir struct{}
-
-func (Dir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = 1
-	a.Mode = os.ModeDir | 0555
-	return nil
-}
-
-func (Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	if name == "hello.txt" {
-		return File{}, nil
-	}
-	return nil, fuse.ENOENT
-}
-
-var dirDirs = []fuse.Dirent{
-	{Inode: 2, Name: "hello.txt", Type: fuse.DT_File},
-}
-
-func (Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	return dirDirs, nil
-}
-
-// File implements both Node and Handle for the hello file.
-type File struct{}
-
-const greeting = "hello, world\n"
-
-func (File) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Inode = 2
-	a.Mode = 0444
-	a.Size = uint64(len(greeting))
-	return nil
-}
-
-func (File) ReadAll(ctx context.Context) ([]byte, error) {
-	return []byte(greeting), nil
+	return dirent
 }
