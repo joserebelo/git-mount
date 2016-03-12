@@ -11,8 +11,6 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"bazil.org/fuse/fuseutil"
-	"golang.org/x/net/context"
 	"taterbase.me/git-mount/git"
 )
 
@@ -31,112 +29,6 @@ var (
 
 	treeish string
 )
-
-type Node interface {
-	fs.Node
-	Name() string
-	Path() string
-	IsDir() bool
-}
-
-type Dir struct {
-	nodes []Node
-	name  string
-	path  string
-}
-
-func (d *Dir) IsDir() bool {
-	return true
-}
-
-func (d *Dir) Name() string {
-	return d.name
-}
-
-func (d *Dir) Path() string {
-	return d.path
-}
-
-func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Mode = os.ModeDir | os.ModeDir | 0555
-	return nil
-}
-
-func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	for _, node := range d.nodes {
-		if node.Name() == name {
-			return node, nil
-		}
-	}
-	return nil, fuse.ENOENT
-}
-
-func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	var dirents []fuse.Dirent
-	for _, node := range d.nodes {
-		dirent := fuse.Dirent{
-			Name: node.Name(),
-		}
-		if node.IsDir() {
-			dirent.Type = fuse.DT_Dir
-		} else {
-			dirent.Type = fuse.DT_File
-		}
-		dirents = append(dirents, dirent)
-	}
-	return dirents, nil
-}
-
-func (d *Dir) AddNode(node Node) {
-	d.nodes = append(d.nodes, node)
-}
-
-type File struct {
-	name   string
-	path   string
-	length uint64
-}
-
-func (f *File) IsDir() bool {
-	return false
-}
-
-func (f *File) Name() string {
-	return f.name
-}
-
-func (f *File) Path() string {
-	return f.path
-}
-
-func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Mode = 0444
-	a.Size = f.length
-	return nil
-}
-
-func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	if !req.Flags.IsReadOnly() {
-		return nil, fuse.Errno(syscall.EACCES)
-	}
-	resp.Flags |= fuse.OpenKeepCache
-	return f, nil
-}
-
-func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	content, err := git.ShowContents(treeish, f.Path())
-	if err != nil {
-		return err
-	}
-	fuseutil.HandleRead(req, resp, []byte(content))
-	return nil
-}
-
-type GitFS struct{}
-
-func (gfs *GitFS) Root() (fs.Node, error) {
-	return root, nil
-}
 
 func main() {
 	flag.Parse()
@@ -161,7 +53,7 @@ func main() {
 
 	for _, file_path := range paths {
 		dir, file_name := filepath.Split(file_path)
-		file := &File{name: file_name, path: file_path}
+		file := &File{treeish: treeish, name: file_name, path: file_path}
 		content, err := git.ShowContents(treeish, file_path)
 		if err != nil {
 			log.Fatal(err)
@@ -204,7 +96,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	err = fs.Serve(c, &GitFS{})
+	err = fs.Serve(c, &GitFS{root: root})
 	if err != nil {
 		log.Fatal(err)
 	}
