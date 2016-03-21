@@ -10,6 +10,13 @@ import (
 	"taterbase.me/git-mount/git"
 )
 
+var (
+	_ Node            = (*File)(nil)
+	_ fs.NodeOpener   = (*File)(nil)
+	_ fs.Handle       = (*File)(nil)
+	_ fs.HandleReader = (*File)(nil)
+)
+
 type File struct {
 	treeish string
 	name    string
