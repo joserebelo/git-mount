@@ -2,6 +2,21 @@
 
 `git-mount` let's you mount your repo as a filesystem based on  a revision.
 
+##Install
+Please note, `git-mount` requires [FUSE](https://en.wikipedia.org/wiki/Filesystem_in_Userspace)
+to be installed on your system to work. If you're on OS X you can use
+[FUSE for OS X](https://osxfuse.github.io/)
+
+
+You can find the latest binaries on the [releases page](https://github.com/taterbase/git-mount/releases)
+or if you have [Go](http://golang.org/) you can build `git-mount` directly from
+source.
+
+```
+go get taterbase.me/git-mount
+go install taterbase.me/git-mount
+```
+
 ##Usage
 
 Change to a directory that is an existing git repo. Once inside you can call
