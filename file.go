@@ -7,7 +7,7 @@ import (
 	"bazil.org/fuse/fs"
 	"bazil.org/fuse/fuseutil"
 	"golang.org/x/net/context"
-	"taterbase.me/git-mount/git"
+	"github.com/joserebelo/git-mount/git"
 )
 
 var (

@@ -11,7 +11,7 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"taterbase.me/git-mount/git"
+	"github.com/joserebelo/git-mount/git"
 )
 
 var (
